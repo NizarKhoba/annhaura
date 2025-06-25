@@ -13,8 +13,8 @@ st.set_page_config(page_title="🎵 Mood Song Finder", page_icon="🎶")
 st.title("🎶 Mood Song Finder")
 st.markdown("Find songs that match your mood. Powered by LangChain + Gemini LLM.")
 
-# --- API Key Input ---
-api_key = st.text_input("Enter your **Google API Key**", type="password")
+# --- API Key Input / Secret ---
+api_key = st.secrets.get("GOOGLE_API_KEY") or st.text_input("Enter your **Google API Key**", type="password")
 if not api_key:
     st.warning("Please enter your API Key to continue.", icon="🔑")
     st.stop()
@@ -25,37 +25,34 @@ os.environ["GOOGLE_API_KEY"] = api_key
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
+# ✅ Fix CSV URL: use raw file from GitHub
 csv_url = "https://raw.githubusercontent.com/annhaura/mood-song-finder/refs/heads/main/spotify_songs.csv"
 df = pd.read_csv(csv_url)
 df["combined_text"] = df.apply(lambda row: f"{row['track_name']} by {row['track_artist']}", axis=1)
 documents = [Document(page_content=text, metadata={"index": i}) for i, text in enumerate(df["combined_text"])]
+
+# --- Vector Embedding & Indexing ---
 embedding_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 vectorstore = FAISS.from_documents(documents, embedding_model)
 
-# --- Tools Definitions ---
-
-# Tool 1: MoodClassifier
+# --- Tool Definitions ---
 def classify_mood(query: str) -> str:
     prompt = f"Classify the emotional mood of this text (examples: happy, sad, nostalgic, energetic, romantic):\n\n{query}"
     return llm.invoke(prompt).content.strip().lower()
 
-# Tool 2: InferGenre
 def infer_genre(query: str) -> str:
     prompt = f"Suggest a suitable music genre for this mood or query:\n\n{query}"
     return llm.invoke(prompt).content.strip()
 
-# Tool 3: RetrieveSimilarSongs
 def retrieve_similar_songs(query: str, k=3) -> str:
     results = vectorstore.similarity_search(query, k=k)
     songs = [f"🎵 {doc.page_content}" for doc in results]
     return "\n".join(songs)
 
-# Tool 4: ExplainChoice
 def explain_choice(query: str, songs: str) -> str:
     prompt = f"User mood/query: {query}\nRecommended songs:\n{songs}\n\nExplain briefly (max 2 sentences) why they fit."
     return llm.invoke(prompt).content.strip()
 
-# Tool 5: Randomizer
 def randomize_list(text_block: str) -> str:
     lines = text_block.strip().splitlines()
     shuffle(lines)
