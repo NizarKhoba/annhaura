@@ -21,19 +21,23 @@ if not api_key:
 
 os.environ["GOOGLE_API_KEY"] = api_key
 
-# --- Load LLM, Memory, Dataset ---
+# --- Load LLM & Memory ---
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-# ✅ Fix CSV URL: use raw file from GitHub
-csv_url = "https://raw.githubusercontent.com/annhaura/mood-song-finder/refs/heads/main/spotify_songs.csv"
-df = pd.read_csv(csv_url)
-df["combined_text"] = df.apply(lambda row: f"{row['track_name']} by {row['track_artist']}", axis=1)
-documents = [Document(page_content=text, metadata={"index": i}) for i, text in enumerate(df["combined_text"])]
+# --- Load Dataset (limited for speed) ---
+csv_url = "https://raw.githubusercontent.com/annhaura/mood-song-finder/main/spotify_songs.csv"
+
+with st.spinner("📥 Loading songs dataset..."):
+    df = pd.read_csv(csv_url).head(300)  # Limit for performance
+    df["combined_text"] = df.apply(lambda row: f"{row['track_name']} by {row['track_artist']}", axis=1)
+    documents = [Document(page_content=text, metadata={"index": i}) for i, text in enumerate(df["combined_text"])]
 
 # --- Vector Embedding & Indexing ---
 embedding_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-vectorstore = FAISS.from_documents(documents, embedding_model)
+
+with st.spinner("🔍 Creating vector index... (may take a while)"):
+    vectorstore = FAISS.from_documents(documents, embedding_model)
 
 # --- Tool Definitions ---
 def classify_mood(query: str) -> str:
@@ -82,7 +86,7 @@ if "chat_history" not in st.session_state:
 
 user_input = st.chat_input("What kind of music do you want to hear today?")
 if user_input:
-    with st.spinner("Thinking..."):
+    with st.spinner("🤖 Thinking..."):
         response = agent.run(user_input)
         st.session_state.chat_history.append(("You", user_input))
         st.session_state.chat_history.append(("AI", response))
