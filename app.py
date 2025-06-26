@@ -40,23 +40,32 @@ with st.spinner("🔍 Creating vector index..."):
 # --- Tool Definitions ---
 def classify_mood(query: str) -> str:
     prompt = f"Classify the emotional mood of this text (examples: happy, sad, nostalgic, energetic, romantic):\n\n{query}"
-    return llm.invoke(prompt).content.strip().lower()
+    try:
+        return llm.invoke(prompt).content.strip().lower()
+    except Exception as e:
+        return "[error]"
 
 def infer_genre(query: str) -> str:
     prompt = f"Suggest a suitable music genre for this mood or query:\n\n{query}"
-    return llm.invoke(prompt).content.strip()
+    try:
+        return llm.invoke(prompt).content.strip()
+    except Exception:
+        return "pop"
 
 def retrieve_similar_songs(query: str, k=3) -> str:
-    results = vectorstore.similarity_search(query, k=k)
-    songs = [f"🎵 {doc.page_content}" for doc in results]
-    return "\n".join(songs)
+    try:
+        results = vectorstore.similarity_search(query, k=k)
+        songs = [f"🎵 {doc.page_content}" for doc in results]
+        return "\n".join(songs) if songs else "No songs found for that mood."
+    except Exception as e:
+        return f"[Error retrieving songs: {e}]"
 
 def randomize_list(text_block: str) -> str:
     lines = text_block.strip().splitlines()
     shuffle(lines)
     return "\n".join(lines)
 
-# --- Tools List (ExplainChoice removed to prevent error) ---
+# --- Tools List ---
 tools = [
     Tool(name="MoodClassifier", func=classify_mood, description="Detects emotional mood from user input."),
     Tool(name="InferGenre", func=infer_genre, description="Suggests a suitable music genre."),
@@ -77,10 +86,17 @@ agent = initialize_agent(
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
+k_value = st.sidebar.slider("Number of Songs to Recommend", 1, 10, 3)
+
 user_input = st.chat_input("What kind of music do you want to hear today?")
 if user_input:
     with st.spinner("🤖 Thinking..."):
-        response = agent.run(user_input)
+        try:
+            response = agent.run(user_input)
+        except Exception as e:
+            # fallback kalau agent gagal
+            st.warning("LLM quota may be exceeded. Falling back to similarity search.")
+            response = retrieve_similar_songs(user_input, k=k_value)
         st.session_state.chat_history.append(("You", user_input))
         st.session_state.chat_history.append(("AI", response))
 
